@@ -66409,5 +66409,599 @@ function K.Unload()
     pcall(function() GlobalTrove:Destroy() end)
     if getgenv().KiciaRebuild == K then getgenv().KiciaRebuild = nil end
 end
+--==========================================================================
+--  Kicia Rebuild —— 啟動入口
+--  Kicia 全部功能保留，UI 外殼替換為 v3hub v12.0（Linoria）
+--==========================================================================
 
-tbl17.j1()(boot)
+--  【第一部分】執行你提供的 Kicia raw (2).txt 全部內容
+--  （原封不動貼上，直到 tbl17.j1() 之前為止）
+--  ... 這裡省略，執行時直接把 raw (2).txt 全部貼進來 ...
+
+--==========================================================================
+--  【第二部分】用 v12.0 的 Linoria 菜單取代 Kicia 的 jf() 入口
+--==========================================================================
+
+--  先接上 v12.0 的 Linoria
+local repo = 'https://raw.githubusercontent.com/mstudio45/LinoriaLib/main/'
+local Library, ThemeManager, SaveManager
+do
+    local files, pending = {}, 3
+    local urls = { 'Library.lua', 'addons/ThemeManager.lua', 'addons/SaveManager.lua' }
+    for i = 1, 3 do
+        task.spawn(function()
+            local got, body = pcall(function() return game:HttpGet(repo .. urls[i]) end)
+            if got and type(body) == 'string' and #body > 0 then files[i] = body end
+            pending = pending - 1
+        end)
+    end
+    local deadline = tick() + 20
+    while pending > 0 and tick() < deadline do task.wait() end
+    local src = files[1]
+    local patched, n = src:gsub('if not FetchIcons then', 'if not Icons then')
+    if n > 0 then src = patched end
+    Library      = loadstring(src)()
+    ThemeManager = loadstring(files[2])()
+    SaveManager  = loadstring(files[3])()
+end
+
+local isMobile = game:GetService("UserInputService").TouchEnabled
+    and not game:GetService("UserInputService").KeyboardEnabled
+Library.IsMobile = isMobile
+Library.ShowCustomCursor = false
+
+local Window = Library:CreateWindow({
+    Title = 'Kicia Rebuild | v12.0',
+    Center = true,
+    AutoShow = false,
+    TabPadding = 8,
+    MenuFadeTime = 0.25,
+    NotifySide = 'Right',
+    Resizable = true,
+    UnlockMouseWhileOpen = true,
+})
+
+local Options = Library.Options or {}
+local Toggles = Library.Toggles or {}
+Library.Options = Options
+Library.Toggles = Toggles
+
+--==========================================================================
+--  Kicia 設定橋接（把 Kicia 的 Config 接到 Linoria 選項）
+--==========================================================================
+--  Kicia 的設定存在 v115.Data（ReactiveStore）內，
+--  這裡用一個小 helper 讓 Linoria 的 toggle/slider 直接寫回 Kicia。
+local KiciaStore = (function()
+    --  Kicia 的 store 在 tbl17.bG() 已經建好
+    local ok, store = pcall(function() return tbl17.bG() end)
+    if ok and store then return store end
+    return nil
+end)()
+
+local function kSet(path, value)
+    if KiciaStore then
+        pcall(function() KiciaStore:Set(path, value) end)
+    end
+end
+
+local function kGet(path)
+    if KiciaStore then
+        local ok, v = pcall(function() return KiciaStore:Get(path) end)
+        if ok then return v end
+    end
+    return nil
+end
+
+--==========================================================================
+--  分頁建立
+--==========================================================================
+local Tabs = {
+    Combat   = Window:AddTab('戰鬥'),
+    Visuals  = Window:AddTab('透視'),
+    Movement = Window:AddTab('移動'),
+    Items    = Window:AddTab('物品'),
+    Cosmetics= Window:AddTab('外觀'),
+    Auto     = Window:AddTab('自動'),
+    World    = Window:AddTab('世界'),
+    Settings = Window:AddTab('設定'),
+}
+
+--==========================================================================
+--  戰鬥分頁（接 Kicia Aimbot / SilentAim / Triggerbot / Ragebot）
+--==========================================================================
+do
+    local L = Tabs.Combat:AddLeftGroupbox('瞄準')
+
+    --  1. Aimbot
+    L:AddToggle('K_Aimbot_Enabled', {
+        Text = '啟用 Aimbot',
+        Default = false,
+        Callback = function(v) kSet({ "Aimbot", "Enabled" }, v) end,
+    }):AddKeyPicker('K_Aimbot_Key', {
+        Text = 'Aimbot',
+        Default = 'None',
+        Mode = 'Toggle',
+        NoUI = true,
+        SyncToggleState = true,
+    })
+
+    L:AddDropdown('K_Aimbot_Mode', {
+        Values = { 'Linear', 'AI', 'Spring', 'Lock' },
+        Default = 'Linear',
+        Text = '瞄準模式',
+        Callback = function(v) kSet({ "Aimbot", "Mode", "Type" }, v) end,
+    })
+
+    L:AddSlider('K_Aimbot_Speed', {
+        Text = '瞄準速度',
+        Default = 0.1,
+        Min = 0.01, Max = 1, Rounding = 2,
+        Callback = function(v) kSet({ "Aimbot", "Mode", "Speed" }, v) end,
+    })
+
+    L:AddSlider('K_Aimbot_Fov', {
+        Text = '視野半徑',
+        Default = 150,
+        Min = 1, Max = 600, Rounding = 0,
+        Callback = function(v) kSet({ "Aimbot", "Fov", "Radius" }, v) end,
+    })
+
+    L:AddSlider('K_Aimbot_ReactionTime', {
+        Text = '反應延遲',
+        Default = 0,
+        Min = 0, Max = 2, Rounding = 2,
+        Callback = function(v) kSet({ "Aimbot", "ReactionTime" }, v) end,
+    })
+
+    --  2. SilentAim
+    L:AddDivider('靜默自瞄')
+    L:AddToggle('K_Silent_Enabled', {
+        Text = '啟用 Silent Aim',
+        Default = false,
+        Callback = function(v) kSet({ "SilentAim", "Enabled" }, v) end,
+    }):AddKeyPicker('K_Silent_Key', {
+        Text = 'Silent Aim',
+        Default = 'None',
+        Mode = 'Toggle',
+        NoUI = true,
+        SyncToggleState = true,
+    })
+
+    L:AddSlider('K_Silent_Chance', {
+        Text = '命中率 %',
+        Default = 100,
+        Min = 0, Max = 100, Rounding = 0,
+        Callback = function(v) kSet({ "SilentAim", "ActivationChance" }, v) end,
+    })
+
+    --  3. Triggerbot
+    L:AddDivider('觸發')
+    L:AddToggle('K_Trigger_Enabled', {
+        Text = '啟用 Triggerbot',
+        Default = false,
+        Callback = function(v) kSet({ "Triggerbot", "Enabled" }, v) end,
+    }):AddKeyPicker('K_Trigger_Key', {
+        Text = 'Triggerbot',
+        Default = 'None',
+        Mode = 'Toggle',
+        NoUI = true,
+        SyncToggleState = true,
+    })
+
+    L:AddSlider('K_Trigger_Reaction', {
+        Text = '反應延遲',
+        Default = 0,
+        Min = 0, Max = 2, Rounding = 2,
+        Callback = function(v) kSet({ "Triggerbot", "ReactionTime" }, v) end,
+    })
+
+    --  4. Ragebot
+    local R = Tabs.Combat:AddRightGroupbox('狂暴')
+    R:AddToggle('K_Rage_Enabled', {
+        Text = '啟用 Ragebot',
+        Default = false,
+        Callback = function(v) kSet({ "Ragebot", "Enabled" }, v) end,
+    }):AddKeyPicker('K_Rage_Key', {
+        Text = 'Ragebot',
+        Default = 'None',
+        Mode = 'Toggle',
+        NoUI = true,
+        SyncToggleState = true,
+    })
+
+    R:AddSlider('K_Rage_Stability', {
+        Text = '穩定性',
+        Default = 0.15,
+        Min = 0, Max = 1.5, Rounding = 3,
+        Callback = function(v) kSet({ "Ragebot", "Stability" }, v) end,
+    })
+
+    R:AddSlider('K_Rage_Frames', {
+        Text = '開火幀數',
+        Default = 1,
+        Min = 1, Max = 5, Rounding = 0,
+        Callback = function(v) kSet({ "Ragebot", "ShootFrames" }, v) end,
+    })
+
+    R:AddToggle('K_Rage_Hackers', {
+        Text = '優先駭客',
+        Default = false,
+        Callback = function(v) kSet({ "Ragebot", "PrioritizeHackers" }, v) end,
+    })
+end
+
+--==========================================================================
+--  透視分頁（接 Kicia ESP）
+--==========================================================================
+do
+    local L = Tabs.Visuals:AddLeftGroupbox('玩家 ESP')
+
+    L:AddToggle('K_ESP_Enabled', {
+        Text = '啟用 ESP',
+        Default = false,
+        Callback = function(v) kSet({ "Esp", "Main", "Enabled" }, v) end,
+    }):AddKeyPicker('K_ESP_Key', {
+        Text = 'ESP',
+        Default = 'None',
+        Mode = 'Toggle',
+        NoUI = true,
+        SyncToggleState = true,
+    })
+
+    L:AddToggle('K_ESP_Box', {
+        Text = '方框',
+        Default = false,
+        Callback = function(v) kSet({ "Esp", "Enemy", "Box", "Enabled" }, v) end,
+    })
+
+    L:AddToggle('K_ESP_Name', {
+        Text = '名稱',
+        Default = false,
+        Callback = function(v) kSet({ "Esp", "Enemy", "Name", "Enabled" }, v) end,
+    })
+
+    L:AddToggle('K_ESP_Distance', {
+        Text = '距離',
+        Default = false,
+        Callback = function(v) kSet({ "Esp", "Enemy", "Distance", "Enabled" }, v) end,
+    })
+
+    L:AddToggle('K_ESP_Health', {
+        Text = '血條',
+        Default = false,
+        Callback = function(v) kSet({ "Esp", "Enemy", "HealthBar", "Enabled" }, v) end,
+    })
+
+    L:AddToggle('K_ESP_Skeleton', {
+        Text = '骨架',
+        Default = false,
+        Callback = function(v) kSet({ "Esp", "Enemy", "Skeleton", "Enabled" }, v) end,
+    })
+
+    L:AddToggle('K_ESP_Chams', {
+        Text = 'Chams',
+        Default = false,
+        Callback = function(v) kSet({ "Esp", "Enemy", "Chams", "Enabled" }, v) end,
+    })
+
+    local R = Tabs.Visuals:AddRightGroupbox('其他')
+    R:AddToggle('K_SoundVis_Enabled', {
+        Text = '聲音可視化',
+        Default = false,
+        Callback = function(v) kSet({ "SoundVisualizer", "Enabled" }, v) end,
+    })
+end
+
+--==========================================================================
+--  移動分頁
+--==========================================================================
+do
+    local L = Tabs.Movement:AddLeftGroupbox('移動')
+
+    L:AddToggle('K_WalkSpeed_Enabled', {
+        Text = '修改步行速度',
+        Default = false,
+        Callback = function(v) kSet({ "Movement", "WalkSpeed", "Enabled" }, v) end,
+    }):AddKeyPicker('K_WalkSpeed_Key', {
+        Text = 'WalkSpeed',
+        Default = 'None',
+        Mode = 'Toggle',
+        NoUI = true,
+        SyncToggleState = true,
+    })
+
+    L:AddSlider('K_WalkSpeed_Speed', {
+        Text = '速度倍率',
+        Default = 2,
+        Min = 1, Max = 10, Rounding = 2,
+        Callback = function(v) kSet({ "Movement", "WalkSpeed", "Speed" }, v) end,
+    })
+
+    L:AddToggle('K_Flight_Enabled', {
+        Text = '飛行',
+        Default = false,
+        Callback = function(v) kSet({ "Movement", "Flight", "Enabled" }, v) end,
+    }):AddKeyPicker('K_Flight_Key', {
+        Text = 'Flight',
+        Default = 'None',
+        Mode = 'Toggle',
+        NoUI = true,
+        SyncToggleState = true,
+    })
+
+    L:AddSlider('K_Flight_Speed', {
+        Text = '飛行速度',
+        Default = 100,
+        Min = 25, Max = 500, Rounding = 0,
+        Callback = function(v) kSet({ "Movement", "Flight", "Speed" }, v) end,
+    })
+
+    L:AddToggle('K_Noclip_Enabled', {
+        Text = '穿牆',
+        Default = false,
+        Callback = function(v) kSet({ "Movement", "Noclip", "Enabled" }, v) end,
+    }):AddKeyPicker('K_Noclip_Key', {
+        Text = 'Noclip',
+        Default = 'None',
+        Mode = 'Toggle',
+        NoUI = true,
+        SyncToggleState = true,
+    })
+end
+
+--==========================================================================
+--  物品分頁
+--==========================================================================
+do
+    local L = Tabs.Items:AddLeftGroupbox('物品修改')
+
+    L:AddToggle('K_NoCooldown', {
+        Text = '無冷卻',
+        Default = false,
+        Callback = function(v) kSet({ "ItemModifiers", "FireCooldown", "Enabled" }, v) end,
+    })
+
+    L:AddToggle('K_NoSpread', {
+        Text = '無散射',
+        Default = false,
+        Callback = function(v) kSet({ "ItemModifiers", "NoSpread" }, v) end,
+    })
+
+    L:AddToggle('K_NoRecoil', {
+        Text = '無後座',
+        Default = false,
+        Callback = function(v) kSet({ "ItemModifiers", "Recoil", "Enabled" }, v) end,
+    })
+
+    L:AddToggle('K_AutoWeapon', {
+        Text = '全自動',
+        Default = false,
+        Callback = function(v) kSet({ "ItemModifiers", "AutomaticWeapon" }, v) end,
+    })
+
+    L:AddToggle('K_InfJumps', {
+        Text = '無限二段跳',
+        Default = false,
+        Callback = function(v) kSet({ "ItemModifiers", "InfiniteDoubleJumps" }, v) end,
+    })
+
+    L:AddToggle('K_Backstab', {
+        Text = '永遠背刺',
+        Default = false,
+        Callback = function(v) kSet({ "ItemModifiers", "AlwaysBackstab" }, v) end,
+    })
+
+    local R = Tabs.Items:AddRightGroupbox('視覺')
+    R:AddToggle('K_Tracers', {
+        Text = '彈道曳光',
+        Default = false,
+        Callback = function(v) kSet({ "BulletTracers", "Enabled" }, v) end,
+    })
+
+    R:AddToggle('K_ChamsArms', {
+        Text = '手臂 Chams',
+        Default = false,
+        Callback = function(v) kSet({ "Chams", "Arms", "Enabled" }, v) end,
+    })
+
+    R:AddToggle('K_ChamsItem', {
+        Text = '物品 Chams',
+        Default = false,
+        Callback = function(v) kSet({ "Chams", "Item", "Enabled" }, v) end,
+    })
+end
+
+--==========================================================================
+--  外觀分頁（接 Kicia Cosmetics）
+--==========================================================================
+do
+    local L = Tabs.Cosmetics:AddLeftGroupbox('外觀')
+
+    L:AddToggle('K_CosRuntime', {
+        Text = '啟用外觀修改',
+        Default = false,
+        Callback = function(v)
+            pcall(function()
+                local cfg = getgenv().KiciaCosmeticsConfig
+                if cfg then cfg:SetRuntimeEnabled(v) end
+            end)
+        end,
+    })
+
+    L:AddToggle('K_UnlockAll', {
+        Text = '解鎖全部',
+        Default = false,
+        Callback = function(v)
+            pcall(function()
+                local cos = getgenv().KiciaCosmetics
+                if cos then cos:SetUnlockerEnabled(v) end
+            end)
+        end,
+    })
+
+    L:AddToggle('K_SkinChanger', {
+        Text = '換膚',
+        Default = false,
+        Callback = function(v)
+            pcall(function()
+                local cos = getgenv().KiciaCosmetics
+                if cos then cos:SetSkinChangerEnabled(v) end
+            end)
+        end,
+    })
+end
+
+--==========================================================================
+--  自動分頁（接 Kicia AutoQueue / AutoLoadout / AutoPickup 等）
+--==========================================================================
+do
+    local L = Tabs.Auto:AddLeftGroupbox('自動')
+
+    L:AddToggle('K_AutoQueue', {
+        Text = '自動排隊',
+        Default = false,
+        Callback = function(v) kSet({ "AutoQueue", "Enabled" }, v) end,
+    })
+
+    L:AddDropdown('K_AutoQueue_Mode', {
+        Values = { '1v1', '2v2', '3v3', '4v4', '5v5' },
+        Default = '1v1',
+        Text = '模式',
+        Callback = function(v) kSet({ "AutoQueue", "Queue" }, v) end,
+    })
+
+    L:AddToggle('K_AutoRespawn', {
+        Text = '自動重生',
+        Default = false,
+        Callback = function(v) kSet({ "AutoRespawn", "Enabled" }, v) end,
+    })
+
+    L:AddToggle('K_AutoPickup', {
+        Text = '自動撿取',
+        Default = false,
+        Callback = function(v) kSet({ "AutoPickupDrops", "Enabled" }, v) end,
+    })
+
+    L:AddToggle('K_AutoVote', {
+        Text = '自動投票',
+        Default = false,
+        Callback = function(v) kSet({ "AutoVote", "Enabled" }, v) end,
+    })
+
+    L:AddToggle('K_AutoBan', {
+        Text = '自動禁用',
+        Default = false,
+        Callback = function(v) kSet({ "AutoBan", "Enabled" }, v) end,
+    })
+
+    L:AddToggle('K_AntiKatana', {
+        Text = '反武士刀',
+        Default = true,
+        Callback = function(v) kSet({ "AntiKatana", "Enabled" }, v) end,
+    })
+
+    L:AddToggle('K_HackerDetect', {
+        Text = '駭客偵測',
+        Default = false,
+        Callback = function(v) kSet({ "HackerDetector", "Enabled" }, v) end,
+    })
+end
+
+--==========================================================================
+--  世界分頁（接 Kicia Weather / Lighting）
+--==========================================================================
+do
+    local L = Tabs.World:AddLeftGroupbox('環境')
+
+    L:AddToggle('K_Lighting_Enabled', {
+        Text = '啟用光照覆蓋',
+        Default = false,
+        Callback = function(v) kSet({ "Lighting", "Enabled" }, v) end,
+    })
+
+    L:AddToggle('K_Weather_Enabled', {
+        Text = '啟用天氣',
+        Default = false,
+        Callback = function(v) kSet({ "Weather", "Enabled" }, v) end,
+    })
+
+    L:AddDropdown('K_Weather_Preset', {
+        Values = { 'Snow', 'Rain', 'Blizzard' },
+        Default = 'Snow',
+        Text = '天氣預設',
+        Callback = function(v) kSet({ "Weather", "Preset" }, v) end,
+    })
+
+    L:AddToggle('K_Skybox_Enabled', {
+        Text = '啟用天空盒',
+        Default = false,
+        Callback = function(v) kSet({ "Skybox", "Enabled" }, v) end,
+    })
+
+    L:AddToggle('K_Ambience_Enabled', {
+        Text = '啟用環境音',
+        Default = false,
+        Callback = function(v) kSet({ "Ambience", "Enabled" }, v) end,
+    })
+end
+
+--==========================================================================
+--  設定分頁
+--==========================================================================
+do
+    local L = Tabs.Settings:AddLeftGroupbox('選單')
+
+    L:AddDropdown('GUIToggleKey', {
+        Values = { 'RightShift', 'LeftShift', 'RightControl', 'LeftControl', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12', 'Insert', 'Delete', 'Home', 'End' },
+        Default = 'RightShift',
+        Text = '介面開關鍵',
+        Callback = function() end,
+    })
+
+    L:AddButton({
+        Text = '卸載腳本',
+        DoubleClick = true,
+        Func = function()
+            pcall(function() K.Unload() end)
+            pcall(function() Library:Unload() end)
+        end,
+    })
+
+    local keyConn
+    keyConn = game:GetService("UserInputService").InputBegan:Connect(function(input, gpe)
+        if gpe then return end
+        local kp = Options.GUIToggleKey
+        if kp and kp.Value and kp.Value ~= 'None'
+           and Enum.KeyCode[kp.Value] and input.KeyCode == Enum.KeyCode[kp.Value] then
+            pcall(function() Library:Toggle() end)
+        end
+    end)
+    K.onUnload(function() keyConn:Disconnect() end)
+
+    --  Theme / Save
+    task.spawn(function()
+        pcall(function()
+            ThemeManager:SetLibrary(Library)
+            SaveManager:SetLibrary(Library)
+            SaveManager:IgnoreThemeSettings()
+            SaveManager:SetIgnoreIndexes({ 'MenuKeybind' })
+            ThemeManager:SetFolder('kicia_rebuild')
+            SaveManager:SetFolder('kicia_rebuild/rivals')
+            SaveManager:BuildConfigSection(Tabs.Settings)
+            ThemeManager:ApplyToTab(Tabs.Settings)
+            SaveManager:LoadAutoloadConfig()
+        end)
+    end)
+end
+
+--==========================================================================
+--  顯示菜單
+--==========================================================================
+task.defer(function()
+    Library:Notify('Kicia Rebuild | v12.0 GUI 載入完成', 4)
+end)
+
+Window:SelectTab(1)
+_G["\76\72"] = Library
+
+print("[Kicia Rebuild] Kicia 功能已掛載至 v12.0 Linoria GUI")
