@@ -67005,3 +67005,35 @@ Window:SelectTab(1)
 _G["\76\72"] = Library
 
 print("[Kicia Rebuild] Kicia 功能已掛載至 v12.0 Linoria GUI")
+-- 探測 Kicia store（插在 tbl17.j1()(boot) 之前）
+do
+    local store = tbl17.bG()
+    print("========== Kicia Store Dump ==========")
+    print("[typeof store] =", typeof(store))
+    print("[store.Data exists] =", store.Data ~= nil)
+    if store.Data ~= nil then
+        print("---- store.Data 第一層 key ----")
+        for k, v in next, store.Data do
+            print(string.format("  %s : %s", tostring(k), typeof(v)))
+        end
+        print("---- Aimbot ----")
+        if store.Data.Aimbot then
+            for k, v in next, store.Data.Aimbot do
+                print(string.format("  %s : %s", tostring(k), typeof(v)))
+            end
+        end
+        print("---- Esp ----")
+        if store.Data.Esp then
+            for k, v in next, store.Data.Esp do
+                print(string.format("  %s : %s", tostring(k), typeof(v)))
+            end
+        end
+    end
+    print("[store.Get type] =", type(store.Get))
+    print("[store.Set type] =", type(store.Set))
+    print("[store.Changed type] =", type(store.Changed))
+    print("[store.GetPropertyChangedSignal type] =", type(store.GetPropertyChangedSignal))
+    print("=====================================")
+end
+
+-- tbl17.j1()(boot)   ← 這行先註解掉，別跑舊 GUI
